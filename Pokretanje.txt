@@ -1,0 +1,7 @@
+Za pokretanje potrebno je imati instaliran NodeJS.
+
+Prvo pokretanje:
+Uci u folder backend, otvoriti terminal, ukucati: "npm install", zatim "node index.js"
+Uci u folder frontend, otvoriti terminal, ukucati: "npm install", zatim "node index.js"
+
+Otvoriti: http://localhost:8080/

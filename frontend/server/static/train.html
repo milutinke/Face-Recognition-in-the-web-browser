@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="sr">
+    <head>
+        <link href="https://fonts.googleapis.com/icon?family=Material+Icons"
+            rel="stylesheet">
+        <link type="text/css" rel="stylesheet" href="css/materialize.min.css"
+            media="screen,projection" />
+
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script defer src="js/lib/face-api.min.js"></script>
+        <meta name="charset" content="UTF-8">
+    </head>
+
+    <body>
+        <header>
+            <nav>
+                <div class="nav-wrapper cyan darken-1">
+                    <a href="#!" class="brand-logo">&nbsp; Пројекат</a>
+                    <a href="#" data-target="mobile-demo"
+                        class="sidenav-trigger"><i class="material-icons">menu</i></a>
+                    <ul class="right hide-on-med-and-down">
+                        <li><a href="index.html">Корисници</a></li>
+                        <li><a href="recognise.html">Препознавање</a></li>
+                        <li><a href="train.html">Тренирање</a></li>
+                    </ul>
+                </div>
+            </nav>
+
+            <ul class="sidenav cyan lighten-5" id="mobile-demo">
+                <li><a href="index.html">Корисници</a></li>
+                <li><a href="recognise.html">Препознавање</a></li>
+                <li><a href="train.html">Тренирање</a></li>
+            </ul>
+        </header>
+
+        <main>
+            <div class="fixed-action-btn">
+                <a class="btn-floating btn-large cyan darken-1" id="train">
+                    <i class="large material-icons">play_arrow</i>
+                </a>
+            </div>
+
+            <div id="row">
+                <div class="col s12 progress" id="loader">
+                    <div class="indeterminate"></div>
+                </div>
+            </div>
+
+            <div id="row">
+                <div class="container">
+                    <h1>Слике корисника:</h1>
+
+                    <div class="row card" id="images"></div>
+                </div>
+            </div>
+        </main>
+
+        <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+        <script src="https://code.jquery.com/jquery-3.2.1.min.js"
+            type="text/javascript"></script>
+        <script src="js/lib/materialize.js"></script>
+        <script src="js/config.js"></script>
+
+        <script>
+            $(document).ready(() => {
+                $('.sidenav').sidenav();
+                $('.materialbox').materialbox();
+                $("#loader").hide();
+
+                (async () => {
+                    let loadUsers = async () => {
+                        let users = await axios.get(window.appUrl + '/api/user/all')
+                            .then(response => {
+                                return response.data;
+                            })
+                            .catch(error => {
+                                console.log(error);
+                                throw new Error(error);
+                            });
+
+                        return users;
+                    }
+
+                    let users = await loadUsers();
+
+                    await (async () => {
+                        if (users.length > 0) {
+                            if (document.querySelector('#images') !== null) {
+                                users.forEach(user => {
+                                    let photoId = 0;
+
+                                    user.photos.forEach(photo => {
+                                        const gallery = document.querySelector('#images');
+                                        const div = document.createElement('div');
+                                        div.classList = 'col s12 m6 l4';
+
+                                        const canvas = document.createElement('canvas');
+                                        canvas.id = `${user.name}-${photoId}`;
+                                        
+                                        let image = new Image();
+                                        image.src = window.appUrl + '' + photo;
+                                        image.crossOrigin = "anonymous";
+                                        image.onload = () => {
+                                            let context = canvas.getContext('2d');
+
+                                            canvas.width = image.width;
+                                            canvas.height = image.height;
+                                            context.clearRect(0, 0, image.width, image.height);
+                                            context.drawImage(image, 0, 0, image.width, image.height);
+                                            context.font = '15px Arial';
+                                            context.fillStyle = "white";
+                                            context.fillText(user.name, 10, 20);
+                                            canvas.setAttribute('data-src', image.src);
+                                        };
+
+                                        div.appendChild(canvas);
+                                        gallery.appendChild(div);
+
+                                        photoId++;
+                                    });
+                                });
+                            }
+                        }
+                    })();
+
+                    let processImage = async image => {
+                        return faceapi
+                            .detectAllFaces(image, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.4 }))
+                            .withFaceLandmarks({useTiny: true})
+                            .withFaceDescriptors();
+                    };
+
+                    $('#train').click(async () => {
+                        $("#loader").show();
+
+                        let beginTraining = async () => {
+                            let startTime = performance.now();
+                            console.log('Started training!');
+
+                            let faces = [];
+                            let failedToProcess = 0;
+                            let totalProcessedUsers = 0;
+
+                            for(let i = 0; i < users.length; i++) {
+                                let descriptors = [];
+                                console.log(`Processing user #${i} ${users[i].name}`);
+                                totalProcessedUsers ++;
+
+                                if (users[i].photos.length < 3) {
+                                    console.log(`User #${i} ${users[i].name} does not have enough photos to process! (Needed 3)`);
+                                    return;
+                                }
+
+                                for(let p = 0; p < users[i].photos.length; p++) {
+                                    const image = document.getElementById(`${users[i].name}-${p}`);
+
+                                    if(image === null) {
+                                        console.log(`Photo: ${users[i].name}-${p} is null!`);
+                                        failedToProcess ++;
+                                        continue;
+                                    }
+
+                                    console.log(`Processing image: ${image.getAttribute('data-src')}`);
+
+                                    let result = await processImage(image);
+                                                
+                                    if(result === undefined || result === null || result.length === 0) {
+                                        console.log(`Failed to process the image: ${image.getAttribute('data-src')}`);
+                                        failedToProcess ++;
+                                        continue;
+                                    }
+                                               
+                                    console.log(`Successfully procesed the image: ${image.getAttribute('data-src')}`);
+
+                                    let current = result[0];
+
+                                    descriptors.push({
+                                        path: users[i].photos[p],
+                                        descriptor: current.descriptor
+                                    });
+                                }
+
+                                if(descriptors.length) {
+                                    console.log(`Got ${descriptors.length} descriptors for user ${users[i].name}.`)
+
+                                    faces.push({
+                                        user: users[i].name,
+                                        descriptors: descriptors
+                                    });
+
+                                    console.log({
+                                        user: users[i].name,
+                                        descriptors: descriptors
+                                    });
+                                }
+
+                                console.log(`---------------------------------------------------------------------------------------`)
+                            }
+
+                            let descriptorsNumber = 0;
+                            for(let f = 0; f < faces.length; f ++)
+                                descriptorsNumber += faces[f].descriptors.length;
+
+                            console.log(`Processed ${totalProcessedUsers} users.`);
+                            console.log(`Got ${descriptorsNumber} descriptors in total`);
+                            console.log(`Failed to process ${failedToProcess} images in total`);
+
+                            console.log(`Sending data to the server ...`);
+
+                            $("#loader").hide();
+
+                            axios.post(window.appUrl + '/api/face', { faces: faces })
+                                .then(() => console.log('Data successfully sent!'))
+                                .catch(error => console.log(error));
+                        };
+                        
+                        Promise.all([
+                            await faceapi.loadFaceRecognitionModel(window.appUrl + '/data/models'),
+                            await faceapi.loadFaceLandmarkTinyModel(window.appUrl + '/data/models'),
+                            await faceapi.loadFaceLandmarkModel(window.appUrl + '/data/models'),
+                            await faceapi.loadTinyFaceDetectorModel(window.appUrl + '/data/models'),
+                            await faceapi.loadFaceExpressionModel(window.appUrl + '/data/models')
+                        ]).then( beginTraining() );
+                    });
+                })();
+            });
+        </script>
+    </body>
+</html>
